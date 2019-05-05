@@ -1,5 +1,6 @@
 package lm
 
+import "core:os"
 using import "core:math"
 
 _zerof32: f32 = 0;
@@ -7,10 +8,30 @@ _zerof64: f64 = 0;
 inf32 := f32(1) / _zerof32;
 inf64 := f64(1) / _zerof64;
 
-foreign import libc "system:c"
-foreign libc {
-    @(link_name="atan2f")   atan2_f32   :: proc(y, x: f32) -> f32 ---;
-    @(link_name="atan2")    atan2_f64   :: proc(y, x: f64) -> f64 ---;
+when os.OS == "linux" {
+    foreign import libc "system:c"
+    foreign libc {
+        @(link_name="atan2f")   atan2_f32   :: proc(y, x: f32) -> f32 ---;
+        @(link_name="atan2")    atan2_f64   :: proc(y, x: f64) -> f64 ---;
+    }
+}
+when os.OS == "windows" {
+    //https://www.dsprelated.com/showarticle/1052.php
+    atan2_f64 :: proc(y, x: f64) -> f64 {
+        ay, ax := abs(y), abs(x);
+        invert := ay > ax;
+        z := invert ? ax / ay : ay / ax;
+        th := (0.97239411 + -0.19194795 * z * z) * z;
+        if invert do th = PI / 2 - th;
+        if x < 0 do th = PI - th;
+        if y < 0 do th = -abs(th);
+        else do th = abs(th);
+        return th;
+    }
+
+    atan2_f32 :: proc(y, x: f32) -> f32 {
+        return cast(f32) atan2_f64(f64(y), f64(x));
+    }
 }
 
 atan2 :: proc{atan2_f32, atan2_f64};

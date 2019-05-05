@@ -95,7 +95,9 @@ getLines :: proc(str: string) -> []string {
     current_line_start := 0;
     for i := 0; i <= len(str); i += 1 {
         if i == len(str) || str[i] == '\n' {
-            append(&result, str[current_line_start:i]);
+            line_end := i;
+            if i > 0 && str[i - 1] == '\r' do line_end = i - 1;
+            append(&result, str[current_line_start:line_end]);
             current_line_start = i + 1;
         }
     }
@@ -110,7 +112,9 @@ getLineIndices :: proc(str: string) -> [][2]int {
     current_line_start := 0;
     for i := 0; i <= len(str); i += 1 {
         if i == len(str) || str[i] == '\n' {
-            append(&result, [2]int{current_line_start, i});
+            line_end := i;
+            if i > 0 && str[i - 1] == '\r' do line_end = i - 1;
+            append(&result, [2]int{current_line_start, line_end});
             current_line_start = i + 1;
         }
     }
@@ -145,6 +149,7 @@ getTrimmedNonBlankLineIndices :: proc(str: string) -> [][2]int {
 
 // Remove initial newline and indentation from multiline literal
 // Indent has to be just spaces or just tabs.
+// Doesn't work with \r\n.
 cleanMultilineLiteral :: proc(str: string) -> string {
     if len(str) <= 1 do return str;
 

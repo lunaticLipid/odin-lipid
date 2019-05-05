@@ -11,7 +11,7 @@ using import "shared:lipid"
 using import "shared:lipid/lmath"
 
 import "shared:odin-gl"
-import stbi "shared:odin-stb/stb_image"
+import "shared:odin-stb/stbi"
 
 rect0011: ArrayModel;
 rect0011UV: ArrayModel;
@@ -24,115 +24,107 @@ initOpenGLUtilities :: proc() {
     rect0011 = make2dRect(Vec2{0, 0}, Vec2{1, 1});
     rect0011UV = make2dRectUV(Vec2{0, 0}, Vec2{1, 1}, Vec2{0, 0}, Vec2{1, 1});
 
-    fill_color_3d_program_source := cleanMultilineLiteral(`
-    #VERTEX
-    #version 430 core
+    fill_color_3d_program_source := `
+#VERTEX
+#version 430 core
 
-    layout (location = 0) in vec3 position;
+layout (location = 0) in vec3 position;
 
-    void main() {
-        gl_Position = vec4(position, 1);
-    }
+void main() {
+    gl_Position = vec4(position, 1);
+}
 
-    #FRAGMENT
-    #version 430 core
+#FRAGMENT
+#version 430 core
 
-    out vec4 fragment_color;
+out vec4 fragment_color;
 
-    uniform vec4 color;
+uniform vec4 color;
 
-    void main() {
-        fragment_color = color;
-    }
-    `);
-    defer delete(fill_color_3d_program_source);
-
+void main() {
+    fragment_color = color;
+}
+`;
     result, err, bad_shader := makeProgram(fill_color_3d_program_source);
     checkAndPrintShaderError(err, bad_shader, result);
     fill_color_3d_program = result;
 
-    fill_color_3d_program_with_cam_source := cleanMultilineLiteral(`
-    #VERTEX
-    #version 430 core
+    fill_color_3d_program_with_cam_source := `
+#VERTEX
+#version 430 core
 
-    layout (location = 0) in vec3 position;
+layout (location = 0) in vec3 position;
 
-    uniform mat4 camera;
+uniform mat4 camera;
 
-    void main() {
-        gl_Position = vec4(position, 1) * camera;
-    }
+void main() {
+    gl_Position = vec4(position, 1) * camera;
+}
 
-    #FRAGMENT
-    #version 430 core
+#FRAGMENT
+#version 430 core
 
-    out vec4 fragment_color;
+out vec4 fragment_color;
 
-    uniform vec4 color;
+uniform vec4 color;
 
-    void main() {
-        fragment_color = color;
-    }
-    `);
-    defer delete(fill_color_3d_program_with_cam_source);
-
+void main() {
+    fragment_color = color;
+}
+`;
     result, err, bad_shader = makeProgram(fill_color_3d_program_with_cam_source);
     checkAndPrintShaderError(err, bad_shader, result);
     fill_color_3d_program_with_cam = result;
 
-    fill_color_2d_program_source := cleanMultilineLiteral(`
-    #VERTEX
-    #version 430 core
+    fill_color_2d_program_source := `
+#VERTEX
+#version 430 core
 
-    layout (location = 0) in vec2 position;
+layout (location = 0) in vec2 position;
 
-    void main() {
-        gl_Position = vec4(position, 0, 1);
-    }
+void main() {
+    gl_Position = vec4(position, 0, 1);
+}
 
-    #FRAGMENT
-    #version 430 core
+#FRAGMENT
+#version 430 core
 
-    out vec4 fragment_color;
+out vec4 fragment_color;
 
-    uniform vec4 color;
+uniform vec4 color;
 
-    void main() {
-        fragment_color = color;
-    }
-    `);
-    defer delete(fill_color_2d_program_source);
-
+void main() {
+    fragment_color = color;
+}
+`;
     result, err, bad_shader = makeProgram(fill_color_2d_program_source);
     checkAndPrintShaderError(err, bad_shader, result);
     fill_color_2d_program = result;
 
-    fill_color_2d_program_with_cam_source := cleanMultilineLiteral(`
-    #VERTEX
-    #version 430 core
+    fill_color_2d_program_with_cam_source := `
+#VERTEX
+#version 430 core
 
-    uniform mat3 camera;
+uniform mat3 camera;
 
-    layout (location = 0) in vec2 position;
+layout (location = 0) in vec2 position;
 
-    void main() {
-        vec3 affine_position = vec3(position, 1) * camera;
-        gl_Position = vec4(affine_position.xy, 0, affine_position.z);
-    }
+void main() {
+    vec3 affine_position = vec3(position, 1) * camera;
+    gl_Position = vec4(affine_position.xy, 0, affine_position.z);
+}
 
-    #FRAGMENT
-    #version 430 core
+#FRAGMENT
+#version 430 core
 
-    out vec4 fragment_color;
+out vec4 fragment_color;
 
-    uniform vec4 color;
+uniform vec4 color;
 
-    void main() {
-        fragment_color = color;
-    }
-    `);
-    defer delete(fill_color_2d_program_with_cam_source);
-
+void main() {
+    fragment_color = color;
+}
+`;
     result, err, bad_shader = makeProgram(fill_color_2d_program_with_cam_source);
     checkAndPrintShaderError(err, bad_shader, result);
     fill_color_2d_program_with_cam = result;
@@ -750,11 +742,22 @@ make2dRect :: proc(
     return makeArrayModelV2(data[:], gl.TRIANGLES, usage);
 }
 
-LiveProgram :: struct {
-    id: u32,
-    file_path: string,
-    last_mod_seconds: i64,
-    last_mod_nanoseconds: i64,
+when os.OS == "linux" {
+    LiveProgram :: struct {
+        id: u32,
+        file_path: string,
+
+        last_mod_seconds: i64,
+        last_mod_nanoseconds: i64,
+    }
+}
+
+when os.OS == "windows" {
+    LiveProgram :: struct {
+        id: u32,
+        file_path: string,
+        last_mod: os.File_Time,
+    }
 }
 
 LP_setupAndLoad :: proc(using lp: ^LiveProgram, new_file_path: string) {
@@ -764,32 +767,43 @@ LP_setupAndLoad :: proc(using lp: ^LiveProgram, new_file_path: string) {
 }
 
 LP_updateIfModified :: proc(using lp: ^LiveProgram) {
-    file_stats, error_value := os.stat(file_path);
+    file_modified_since_last_time := false;
 
-    if error_value == 0 {
-        file_modified_since_last_time := false;
-
-        if file_stats.modified.seconds > last_mod_seconds {
-            file_modified_since_last_time = true;
-        }
-
-        if file_stats.modified.seconds == last_mod_seconds
-        && file_stats.modified.nanoseconds > last_mod_nanoseconds {
-            file_modified_since_last_time = true;
-        }
-
-        if file_modified_since_last_time {
-            last_mod_seconds = file_stats.modified.seconds;
-            last_mod_nanoseconds = file_stats.modified.nanoseconds;
-
-            new_program, loaded := loadAndCheckProgram(file_path);
-            if loaded {
-                gl.DeleteProgram(id);
-                id = new_program;
+    when os.OS == "linux" {
+        if file_stats, error_value := os.stat(file_path); error_value == 0 {
+            if 
+                file_stats.modified.seconds > last_mod_seconds ||
+                (
+                    file_stats.modified.seconds == last_mod_seconds &&
+                    file_stats.modified.nanoseconds > last_mod_nanoseconds
+                )
+            {
+                file_modified_since_last_time = true;
+                last_mod_seconds = file_stats.modified.seconds;
+                last_mod_nanoseconds = file_stats.modified.nanoseconds;
             }
         }
+        else do println("Could not check file stats for live program:", file_path);
     }
-    else do println("Could not load shader file:", file_path);
+    when os.OS == "windows" {
+        new_last_mod, errno := os.last_write_time_by_name(file_path);
+        if errno != os.ERROR_NONE {
+            if new_last_mod > last_mod {
+                file_modified_since_last_time = true;
+                last_mod = new_last_mod;
+            }
+        }
+        else do println("Could not check file stats for live program:", file_path);
+    }
+
+    if file_modified_since_last_time {
+        new_program, loaded := loadAndCheckProgram(file_path);
+        if loaded {
+            gl.DeleteProgram(id);
+            id = new_program;
+        }
+        else do println("Could not load shader file:", file_path);
+    }
 }
 
 LP_cleanup :: proc(using lp: ^LiveProgram) {
@@ -847,6 +861,7 @@ makeProgram :: proc(program_string: string) -> (program: u32, err: int = 0, bad_
             current_shader_type = shader_type;
         }
     }
+    if current_shader_start == -1 do return 0, 4, 0;
     append(&shader_codes, ShaderCode{current_shader_start, len(lines) - 1, current_shader_type});
 
     compiled_shaders := make([]u32, len(shader_codes));
@@ -900,39 +915,40 @@ checkAndPrintShaderError :: proc(
     log := string(make([]byte, 512));
     defer delete(log);
 
-    if err == 0 do return false;
-    else {
-        if err == 1 do println("Shader file loading error for", path);
-        else if err == 2 {
-            println("Shader compilation error for", path);
+    switch err {
+    case 0:
+        return false;
+    case 1:
+        println("Shader file loading error for", path);
+    case 2:
+        println("Shader compilation error for", path);
 
-            printed_length: i32;
-            gl.GetShaderInfoLog(bad_shader, i32(len(log)), &printed_length, cast(^byte)&log[0]);
+        printed_length: i32;
+        gl.GetShaderInfoLog(bad_shader, i32(len(log)), &printed_length, cast(^byte)&log[0]);
 
-            print(log);
-            if i32(len(log)) == printed_length + 1 do print("(...)\n");
-            else do print("\n");
+        print(log);
+        if i32(len(log)) == printed_length + 1 do print("(...)\n");
+        else do print("\n");
 
-            gl.DeleteShader(bad_shader);
-        }
-        else if (err == 3) {
-            println("Program linking error for", path);
+        gl.DeleteShader(bad_shader);
+    case 3:
+        println("Program linking error for", path);
 
-            printed_length: i32;
-            gl.GetProgramInfoLog(bad_program, i32(len(log)), &printed_length, cast(^byte)&log[0]);
+        printed_length: i32;
+        gl.GetProgramInfoLog(bad_program, i32(len(log)), &printed_length, cast(^byte)&log[0]);
 
-            print(log);
-            if i32(len(log)) == printed_length + 1 do print("(...)\n");
-            else do print("\n");
+        print(log);
+        if i32(len(log)) == printed_length + 1 do print("(...)\n");
+        else do print("\n");
 
-            gl.DeleteProgram(bad_program);
-        }
-        else {
-            println("Unknown or invalid error for", path);
-        }
-
-        return true;
+        gl.DeleteProgram(bad_program);
+    case 4:
+        println("Program markup parsing error for", path);
+    case:
+        println("Unknown or invalid error for", path);
     }
+
+    return true;
 }
 
 loadAndCheckProgram :: proc(path: string) -> (u32, bool) {
