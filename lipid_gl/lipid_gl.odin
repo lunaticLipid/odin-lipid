@@ -7,8 +7,8 @@ import "core:strings"
 import "core:strconv"
 using import "core:math"
 
-using import "shared:lipid"
-using import "shared:lipid/lmath"
+using import "../"
+using import "../math"
 
 import "shared:odin-gl"
 import "shared:odin-stb/stbi"
@@ -20,7 +20,7 @@ fill_color_3d_program_with_cam: u32;
 fill_color_2d_program: u32;
 fill_color_2d_program_with_cam: u32;
 
-initOpenGLUtilities :: proc() {
+initLipidGL :: proc() {
     rect0011 = make2dRect(Vec2{0, 0}, Vec2{1, 1});
     rect0011UV = make2dRectUV(Vec2{0, 0}, Vec2{1, 1}, Vec2{0, 0}, Vec2{1, 1});
 
@@ -45,6 +45,7 @@ void main() {
     fragment_color = color;
 }
 `;
+
     result, err, bad_shader := makeProgram(fill_color_3d_program_source);
     checkAndPrintShaderError(err, bad_shader, result);
     fill_color_3d_program = result;
@@ -72,6 +73,7 @@ void main() {
     fragment_color = color;
 }
 `;
+
     result, err, bad_shader = makeProgram(fill_color_3d_program_with_cam_source);
     checkAndPrintShaderError(err, bad_shader, result);
     fill_color_3d_program_with_cam = result;
@@ -97,6 +99,7 @@ void main() {
     fragment_color = color;
 }
 `;
+
     result, err, bad_shader = makeProgram(fill_color_2d_program_source);
     checkAndPrintShaderError(err, bad_shader, result);
     fill_color_2d_program = result;
@@ -125,6 +128,7 @@ void main() {
     fragment_color = color;
 }
 `;
+
     result, err, bad_shader = makeProgram(fill_color_2d_program_with_cam_source);
     checkAndPrintShaderError(err, bad_shader, result);
     fill_color_2d_program_with_cam = result;
@@ -307,7 +311,7 @@ loadTextureFromFile :: proc(
 ) -> (
     result: Texture, err: bool
 ) {
-    c_path := strings.clone_to_cstring(file_path); defer delete(c_path);
+    c_path := strings.new_cstring(file_path); defer delete(c_path);
 
     width, height, num_channels: i32;
     image_data := stbi.load(cast(^u8) c_path, &width, &height, &num_channels, i32(num_channels_wanted));
@@ -742,22 +746,10 @@ make2dRect :: proc(
     return makeArrayModelV2(data[:], gl.TRIANGLES, usage);
 }
 
-when os.OS == "linux" {
-    LiveProgram :: struct {
-        id: u32,
-        file_path: string,
-
-        last_mod_seconds: i64,
-        last_mod_nanoseconds: i64,
-    }
-}
-
-when os.OS == "windows" {
-    LiveProgram :: struct {
-        id: u32,
-        file_path: string,
-        last_mod: os.File_Time,
-    }
+LiveProgram :: struct {
+    id: u32,
+    file_path: string,
+    last_mod: os.File_Time,
 }
 
 LP_setupAndLoad :: proc(using lp: ^LiveProgram, new_file_path: string) {
@@ -767,36 +759,11 @@ LP_setupAndLoad :: proc(using lp: ^LiveProgram, new_file_path: string) {
 }
 
 LP_updateIfModified :: proc(using lp: ^LiveProgram) {
-    file_modified_since_last_time := false;
+    new_last_mod := os.last_write_time_by_name(file_path);
 
-    when os.OS == "linux" {
-        if file_stats, error_value := os.stat(file_path); error_value == 0 {
-            if 
-                file_stats.modified.seconds > last_mod_seconds ||
-                (
-                    file_stats.modified.seconds == last_mod_seconds &&
-                    file_stats.modified.nanoseconds > last_mod_nanoseconds
-                )
-            {
-                file_modified_since_last_time = true;
-                last_mod_seconds = file_stats.modified.seconds;
-                last_mod_nanoseconds = file_stats.modified.nanoseconds;
-            }
-        }
-        else do println("Could not check file stats for live program:", file_path);
-    }
-    when os.OS == "windows" {
-        new_last_mod, errno := os.last_write_time_by_name(file_path);
-        if errno != os.ERROR_NONE {
-            if new_last_mod > last_mod {
-                file_modified_since_last_time = true;
-                last_mod = new_last_mod;
-            }
-        }
-        else do println("Could not check file stats for live program:", file_path);
-    }
+    if new_last_mod > last_mod {
+        last_mod = new_last_mod;
 
-    if file_modified_since_last_time {
         new_program, loaded := loadAndCheckProgram(file_path);
         if loaded {
             gl.DeleteProgram(id);
@@ -808,6 +775,7 @@ LP_updateIfModified :: proc(using lp: ^LiveProgram) {
 
 LP_cleanup :: proc(using lp: ^LiveProgram) {
     gl.DeleteProgram(id);
+    delete(file_path);
     lp^ = LiveProgram{};
 }
 
@@ -861,7 +829,6 @@ makeProgram :: proc(program_string: string) -> (program: u32, err: int = 0, bad_
             current_shader_type = shader_type;
         }
     }
-    if current_shader_start == -1 do return 0, 4, 0;
     append(&shader_codes, ShaderCode{current_shader_start, len(lines) - 1, current_shader_type});
 
     compiled_shaders := make([]u32, len(shader_codes));
@@ -915,40 +882,39 @@ checkAndPrintShaderError :: proc(
     log := string(make([]byte, 512));
     defer delete(log);
 
-    switch err {
-    case 0:
-        return false;
-    case 1:
-        println("Shader file loading error for", path);
-    case 2:
-        println("Shader compilation error for", path);
+    if err == 0 do return false;
+    else {
+        if err == 1 do println("Shader file loading error for", path);
+        else if err == 2 {
+            println("Shader compilation error for", path);
 
-        printed_length: i32;
-        gl.GetShaderInfoLog(bad_shader, i32(len(log)), &printed_length, cast(^byte)&log[0]);
+            printed_length: i32;
+            gl.GetShaderInfoLog(bad_shader, i32(len(log)), &printed_length, cast(^byte)&log[0]);
 
-        print(log);
-        if i32(len(log)) == printed_length + 1 do print("(...)\n");
-        else do print("\n");
+            print(log);
+            if i32(len(log)) == printed_length + 1 do print("(...)\n");
+            else do print("\n");
 
-        gl.DeleteShader(bad_shader);
-    case 3:
-        println("Program linking error for", path);
+            gl.DeleteShader(bad_shader);
+        }
+        else if (err == 3) {
+            println("Program linking error for", path);
 
-        printed_length: i32;
-        gl.GetProgramInfoLog(bad_program, i32(len(log)), &printed_length, cast(^byte)&log[0]);
+            printed_length: i32;
+            gl.GetProgramInfoLog(bad_program, i32(len(log)), &printed_length, cast(^byte)&log[0]);
 
-        print(log);
-        if i32(len(log)) == printed_length + 1 do print("(...)\n");
-        else do print("\n");
+            print(log);
+            if i32(len(log)) == printed_length + 1 do print("(...)\n");
+            else do print("\n");
 
-        gl.DeleteProgram(bad_program);
-    case 4:
-        println("Program markup parsing error for", path);
-    case:
-        println("Unknown or invalid error for", path);
+            gl.DeleteProgram(bad_program);
+        }
+        else {
+            println("Unknown or invalid error for", path);
+        }
+
+        return true;
     }
-
-    return true;
 }
 
 loadAndCheckProgram :: proc(path: string) -> (u32, bool) {
@@ -957,54 +923,47 @@ loadAndCheckProgram :: proc(path: string) -> (u32, bool) {
 }
 
 setUniformf32 :: proc(program: u32, name: string, value: f32) {
-    cname := strings.clone_to_cstring(name); defer delete(cname);
-    gl.Uniform1f(gl.get_uniform_location(program, cname), value);
+    gl.Uniform1f(gl.get_uniform_location(program, name), value);
 }
 
 setUniformV2 :: proc(program: u32, name: string, value: Vec2) {
-    cname := strings.clone_to_cstring(name); defer delete(cname);
     gl.Uniform2fv(
-        gl.get_uniform_location(program, cname),
+        gl.get_uniform_location(program, name),
         1, cast(^f32)&value
     );
 }
 
 setUniformV3 :: proc(program: u32, name: string, value: Vec3) {
-    cname := strings.clone_to_cstring(name); defer delete(cname);
     gl.Uniform3fv(
-        gl.get_uniform_location(program, cname),
+        gl.get_uniform_location(program, name),
         1, cast(^f32)&value
     );
 }
 
 setUniformV4 :: proc(program: u32, name: string, value: Vec4) {
-    cname := strings.clone_to_cstring(name); defer delete(cname);
     gl.Uniform4fv(
-        gl.get_uniform_location(program, cname),
+        gl.get_uniform_location(program, name),
         1, cast(^f32)&value
     );
 }
 
 setUniformM2 :: proc(program: u32, name: string, value: ^Mat2, transpose := false) {
-    cname := strings.clone_to_cstring(name); defer delete(cname);
     gl.UniformMatrix2fv(
-        gl.get_uniform_location(program, cname),
+        gl.get_uniform_location(program, name),
         1, transpose ? gl.TRUE : gl.FALSE, cast(^f32)value
     );
 }
 
 setUniformM3 :: proc(program: u32, name: string, value: ^Mat3, transpose := false) {
-    cname := strings.clone_to_cstring(name); defer delete(cname);
     gl.UniformMatrix3fv(
-        gl.get_uniform_location(program, cname),
+        gl.get_uniform_location(program, name),
         1, transpose ? gl.TRUE : gl.FALSE, cast(^f32)value
     );
 }
 
 setUniformM4 :: proc(program: u32, name: string, value: ^Mat4, transpose := false) {
-    cname := strings.clone_to_cstring(name); defer delete(cname);
     gl.UniformMatrix4fv(
-        gl.get_uniform_location(program, cname),
+        gl.get_uniform_location(program, name),
         1, transpose ? gl.TRUE : gl.FALSE, cast(^f32)value
     );
 }
