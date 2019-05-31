@@ -7,10 +7,10 @@ import "core:strings"
 import "core:strconv"
 using import "core:math"
 
-using import "../"
-using import "../math"
+using import "shared:lipid"
+using import "shared:lipid/lipid_math"
 
-import "shared:odin-gl"
+import gl "shared:odin-gl"
 import "shared:odin-stb/stbi"
 
 rect0011: ArrayModel;
@@ -311,7 +311,7 @@ loadTextureFromFile :: proc(
 ) -> (
     result: Texture, err: bool
 ) {
-    c_path := strings.new_cstring(file_path); defer delete(c_path);
+    c_path := strings.clone_to_cstring(file_path); defer delete(c_path);
 
     width, height, num_channels: i32;
     image_data := stbi.load(cast(^u8) c_path, &width, &height, &num_channels, i32(num_channels_wanted));
@@ -759,7 +759,11 @@ LP_setupAndLoad :: proc(using lp: ^LiveProgram, new_file_path: string) {
 }
 
 LP_updateIfModified :: proc(using lp: ^LiveProgram) {
-    new_last_mod := os.last_write_time_by_name(file_path);
+    new_last_mod, errno := os.last_write_time_by_name(file_path);
+    if errno != os.ERROR_NONE {
+        println("Could not open shader file for live load:", file_path);
+        return;
+    }
 
     if new_last_mod > last_mod {
         last_mod = new_last_mod;
@@ -769,7 +773,7 @@ LP_updateIfModified :: proc(using lp: ^LiveProgram) {
             gl.DeleteProgram(id);
             id = new_program;
         }
-        else do println("Could not load shader file:", file_path);
+        else do println("Could not load shader file for live load:", file_path);
     }
 }
 
@@ -917,53 +921,58 @@ checkAndPrintShaderError :: proc(
     }
 }
 
+getUniformLocationOdinString :: inline proc(program: u32, name: string) -> i32 {
+    cname := strings.clone_to_cstring(name); defer delete(cname);
+    return gl.get_uniform_location(program, cname);
+}
+
 loadAndCheckProgram :: proc(path: string) -> (u32, bool) {
     result, err, bad_shader := loadProgram(path);
     return result, !checkAndPrintShaderError(err, bad_shader, result, path);
 }
 
 setUniformf32 :: proc(program: u32, name: string, value: f32) {
-    gl.Uniform1f(gl.get_uniform_location(program, name), value);
+    gl.Uniform1f(getUniformLocationOdinString(program, name), value);
 }
 
 setUniformV2 :: proc(program: u32, name: string, value: Vec2) {
     gl.Uniform2fv(
-        gl.get_uniform_location(program, name),
+        getUniformLocationOdinString(program, name),
         1, cast(^f32)&value
     );
 }
 
 setUniformV3 :: proc(program: u32, name: string, value: Vec3) {
     gl.Uniform3fv(
-        gl.get_uniform_location(program, name),
+        getUniformLocationOdinString(program, name),
         1, cast(^f32)&value
     );
 }
 
 setUniformV4 :: proc(program: u32, name: string, value: Vec4) {
     gl.Uniform4fv(
-        gl.get_uniform_location(program, name),
+        getUniformLocationOdinString(program, name),
         1, cast(^f32)&value
     );
 }
 
 setUniformM2 :: proc(program: u32, name: string, value: ^Mat2, transpose := false) {
     gl.UniformMatrix2fv(
-        gl.get_uniform_location(program, name),
+        getUniformLocationOdinString(program, name),
         1, transpose ? gl.TRUE : gl.FALSE, cast(^f32)value
     );
 }
 
 setUniformM3 :: proc(program: u32, name: string, value: ^Mat3, transpose := false) {
     gl.UniformMatrix3fv(
-        gl.get_uniform_location(program, name),
+        getUniformLocationOdinString(program, name),
         1, transpose ? gl.TRUE : gl.FALSE, cast(^f32)value
     );
 }
 
 setUniformM4 :: proc(program: u32, name: string, value: ^Mat4, transpose := false) {
     gl.UniformMatrix4fv(
-        gl.get_uniform_location(program, name),
+        getUniformLocationOdinString(program, name),
         1, transpose ? gl.TRUE : gl.FALSE, cast(^f32)value
     );
 }

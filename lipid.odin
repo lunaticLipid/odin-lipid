@@ -163,7 +163,7 @@ getTrimmedNonBlankLines :: proc(str: string) -> []string {
             if found_line_start {
                 line_end := i;
                 for isASCIIWhitespace(str[line_end]) do line_end -= 1;
-                append(&result, str[current_line_start..line_end]);
+                append(&result, str[current_line_start : line_end + 1]);
             }
             found_line_start = false;
         }

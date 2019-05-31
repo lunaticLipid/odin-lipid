@@ -1,7 +1,7 @@
 package geometry
 
 using import "core:math"
-using import "../lipid_math" // lipid_math
+using import "shared:lipid/lipid_math"
 
 pointInAABB :: proc(point, bottom_left, size: Vec2) -> bool {
     return point.x >= bottom_left.x && point.x <= bottom_left.x + size.x &&
